@@ -50,7 +50,21 @@ fzf reads `FZF_DEFAULT_OPTS` at startup and never re-evaluates colors. Global `C
 
 ## Stable Branches
 
-### stbl-(sigusr1-live-colors)-1
-**Branch:** `fzf-ftr-(fzf-live-theming)-stbl-(sigusr1-live-colors)-1`
+### stbl-(sigusr1-live-colors)-1 (merged to master)
 **What's guaranteed:** SIGUSR1 triggers full live color reload (fzf chrome + bat preview re-execution)
 **Integration:** Themer writes `~/.config/fzf/colors` + seds `~/.config/bat/config` + `pkill -USR1 fzf`
+
+---
+
+# FZF Mouse Selection Feature
+
+## Problem
+fzf has basic mouse support (click moves cursor, shift+click toggles one item) but no Ctrl+click toggle or Shift+click range selection. Need Finder-style mouse interaction matching the yazi model.
+
+## Target Behavior
+- Plain click: move cursor, set anchor
+- Ctrl+click: toggle item, move cursor, set anchor
+- Shift+click: select range from anchor to click, move cursor, set anchor
+- Right-click: toggle (existing)
+
+## Attempts
