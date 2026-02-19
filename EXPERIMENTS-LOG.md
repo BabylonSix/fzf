@@ -11,7 +11,7 @@ fzf reads `FZF_DEFAULT_OPTS` at startup and never re-evaluates colors. Global `C
 ## Attempts
 
 ### exp-(change-color-action)-1
-**Branch:** `fzf-ftr-(fzf-live-theming)-exp-(change-color-action)-1`
+**Branch:** `fzf-ftr-(fzf-live-theming)-exp-(change-color-action)-1` (deleted)
 **Commits:** 6d093834, 9772d819, 2f2f420d
 **Files changed:** `src/terminal.go`, `src/terminal_unix.go`, `src/terminal_windows.go`
 **Files created outside repo:** `~/.config/fzf/colors` (color spec file read by handler)
@@ -23,21 +23,34 @@ fzf reads `FZF_DEFAULT_OPTS` at startup and never re-evaluates colors. Global `C
 - Calls `InitTheme()` to repopulate global `Col*` variables
 - Triggers `reqFullRedraw` + `reqPreviewRefresh`
 
-**Result:**
-- fzf chrome (bg, borders, text, prompt, info, etc.) switches correctly
-- bat preview does NOT update colors on live switch
-- `reqPreviewRefresh` only re-renders cached ANSI output — does NOT re-execute the preview command
-- bat reads `--theme` from `~/.config/bat/config` (sed'd by themer), but since bat is never re-invoked, the new theme is never picked up
+**Result:** Partial — fzf chrome works, bat preview broken. `reqPreviewRefresh` only re-renders cached ANSI, doesn't re-execute bat.
 
-**Status:** partial success — fzf chrome works, bat preview broken
+**Status:** superseded by exp-2
+
+### exp-(change-color-action)-2
+**Branch:** `fzf-ftr-(fzf-live-theming)-exp-(change-color-action)-2` (deleted)
+**Commits:** b4f6f58a
+**Files changed:** `src/terminal.go`, `src/actiontype_string.go`
+**Approach:**
+- Added `reqPreviewRerun` request type
+- SIGUSR1 handler triggers `reqPreviewRerun` instead of `reqPreviewRefresh`
+- Main event loop handles `reqPreviewRerun` by calling `refreshPreview()` — actually re-executes the preview command (bat)
+- bat picks up new `--theme` from `~/.config/bat/config` (sed'd by themer)
+
+**Result:** Full success — fzf chrome AND bat preview both live-switch on SIGUSR1.
+
+**Status:** promoted to `stbl-(sigusr1-live-colors)-1`
 
 **Key learnings:**
 1. `os.Getenv()` reads process env copy from launch — useless for live updates. Use file-based config.
 2. `t.theme = theme` (pointer reassign) breaks renderer — must copy in-place with `*t.theme = *theme`
-3. `reqPreviewRefresh` → `printPreview()` only re-renders cached lines. `reqPreviewEnqueue` → `refreshPreview()` re-executes the command.
+3. `reqPreviewRefresh` → `printPreview()` only re-renders cached lines. Need `reqPreviewRerun` → `refreshPreview()` to re-execute the command.
 
 ---
 
-## Next Ideas
-- Use `refreshPreview()` instead of `reqPreviewRefresh` in SIGUSR1 handler to force bat re-execution
-- Or trigger `reqPreviewEnqueue` directly with fresh environment
+## Stable Branches
+
+### stbl-(sigusr1-live-colors)-1
+**Branch:** `fzf-ftr-(fzf-live-theming)-stbl-(sigusr1-live-colors)-1`
+**What's guaranteed:** SIGUSR1 triggers full live color reload (fzf chrome + bat preview re-execution)
+**Integration:** Themer writes `~/.config/fzf/colors` + seds `~/.config/bat/config` + `pkill -USR1 fzf`
