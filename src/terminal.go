@@ -424,6 +424,9 @@ type Terminal struct {
 	eventChan            chan tui.Event
 	slab                 *util.Slab
 	theme                *tui.ColorTheme
+	baseTheme            *tui.ColorTheme
+	bold                 bool
+	black                bool
 	tui                  tui.Renderer
 	ttyDefault           string
 	ttyin                *os.File
@@ -493,6 +496,7 @@ const (
 	reqPreviewDisplay
 	reqPreviewRefresh
 	reqPreviewDelayed
+	reqPreviewRerun
 
 	reqActivate
 	reqClose
@@ -1132,6 +1136,9 @@ func NewTerminal(opts *Options, eventBox *util.EventBox, executor *util.Executor
 	if baseTheme == nil {
 		baseTheme = renderer.DefaultTheme()
 	}
+	t.baseTheme = baseTheme
+	t.bold = opts.Bold
+	t.black = opts.Black
 	// This should be called before accessing tui.Color*
 	tui.InitTheme(opts.Theme, baseTheme, opts.Bold, opts.Black, opts.InputBorderShape.Visible(), opts.HeaderBorderShape.Visible())
 
@@ -1306,6 +1313,78 @@ func NewTerminal(opts *Options, eventBox *util.EventBox, executor *util.Executor
 
 func (t *Terminal) deferActivation() bool {
 	return t.initDelay == 0 && (t.hasStartActions || t.hasLoadActions || t.hasResultActions || t.hasFocusActions)
+}
+
+// reloadColors reads color specs from ~/.config/fzf/colors, rebuilds the theme,
+// and triggers a full redraw. Called on SIGUSR1.
+func (t *Terminal) reloadColors() {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	colorsFile := homeDir + "/.config/fzf/colors"
+
+	data, err := os.ReadFile(colorsFile)
+	if err != nil {
+		return
+	}
+
+	colorSpecs := extractColorSpecs(string(data))
+	if len(colorSpecs) == 0 {
+		return
+	}
+
+	theme := tui.EmptyTheme
+	var baseTheme *tui.ColorTheme
+	for _, spec := range colorSpecs {
+		bt, newTheme, err := parseTheme(theme, spec)
+		if err != nil {
+			continue
+		}
+		theme = newTheme
+		if bt != nil {
+			baseTheme = bt
+		}
+	}
+
+	if baseTheme == nil {
+		baseTheme = t.baseTheme
+	}
+
+	t.mutex.Lock()
+	// Copy new theme contents into existing theme object so the renderer's
+	// pointer (which points to the same *ColorTheme) sees the update.
+	*t.theme = *theme
+	t.baseTheme = baseTheme
+	tui.InitTheme(t.theme, baseTheme, t.bold, t.black,
+		t.inputBorderShape.Visible(), t.headerBorderShape.Visible())
+	t.mutex.Unlock()
+
+	t.reqBox.Set(reqFullRedraw, nil)
+	t.reqBox.Set(reqPreviewRerun, nil)
+}
+
+// extractColorSpecs parses a shell-words string (like FZF_DEFAULT_OPTS) and
+// returns all --color argument values in order.
+func extractColorSpecs(optsStr string) []string {
+	words, err := parseShellWords(optsStr)
+	if err != nil {
+		return nil
+	}
+	var specs []string
+	for i := 0; i < len(words); i++ {
+		word := words[i]
+		if word == "--color" {
+			// --color VALUE (next arg, same logic as optionalNextString)
+			if i+1 < len(words) && !strings.HasPrefix(words[i+1], "-") && !strings.HasPrefix(words[i+1], "+") {
+				i++
+				specs = append(specs, words[i])
+			}
+		} else if strings.HasPrefix(word, "--color=") {
+			specs = append(specs, strings.TrimPrefix(word, "--color="))
+		}
+	}
+	return specs
 }
 
 func (t *Terminal) environ() []string {
@@ -5444,6 +5523,19 @@ func (t *Terminal) Loop() error {
 			}()
 		}
 
+		usr1Chan := make(chan os.Signal, 1)
+		notifyOnUsr1(usr1Chan) // Non-portable (unix only)
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-usr1Chan:
+					t.reloadColors()
+				}
+			}
+		}()
+
 		t.mutex.Lock()
 		if err := t.initFunc(); err != nil {
 			t.mutex.Unlock()
@@ -5814,6 +5906,8 @@ func (t *Terminal) Loop() error {
 						t.printPreview()
 					case reqPreviewRefresh:
 						t.printPreview()
+					case reqPreviewRerun:
+						refreshPreview(t.previewOpts.command)
 					case reqPreviewDelayed:
 						t.previewer.version = value.(int64)
 						t.printPreviewDelayed()
