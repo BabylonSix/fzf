@@ -68,3 +68,29 @@ fzf has basic mouse support (click moves cursor, shift+click toggles one item) b
 - Right-click: toggle (existing)
 
 ## Attempts
+
+### exp-(finder-style-click)-1
+**Branch:** `fzf-ftr-(fzf-mouse-selection)-exp-(finder-style-click)-1` (deleted)
+**Commits:** 6b164a6e, d538655c
+**Files changed:** `src/terminal.go`, `src/tui/light.go`, `src/tui/tcell.go`
+**Approach:**
+- Added `anchor int` field to Terminal struct for range selection tracking
+- Added `selectRange(from, to int)` method — iterates items, calls `selectItem()` on each
+- Rewrote mouse click handler: Ctrl+Left toggles, Shift+Left selects range, plain Left sets anchor
+- Added XTSHIFTESCAPE (`\e[>1s` / `\e[>0s`) in both light and tcell renderers so Shift reaches fzf in Ghostty
+
+**Result:** Full success — all interactions work as designed.
+
+**Status:** promoted to `stbl-(finder-style-click)-1`, squash merged to master (9a04eadb)
+
+**Key learnings:**
+1. Ghostty (and most terminals) consume Shift+click for text selection by default. XTSHIFTESCAPE (`\e[>1s`) tells the terminal to pass shift-clicks through to the application.
+2. Better to emit XTSHIFTESCAPE in the binary itself (mouse enable/disable) than in wrapper scripts — fzf gets invoked from many contexts (Ctrl+R, Ctrl+T, tab completion).
+3. `me.Mod()` checks any modifier — need `me.Ctrl` and `me.Shift` separately for distinct behaviors.
+
+---
+
+## Stable Branches
+
+### stbl-(finder-style-click)-1 (merged to master)
+**What's guaranteed:** Ctrl+click toggles items, Shift+click selects range, XTSHIFTESCAPE emitted natively
