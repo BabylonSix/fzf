@@ -305,6 +305,7 @@ type Terminal struct {
 	cy                   int
 	offset               int
 	xoffset              int
+	anchor               int
 	yanked               []rune
 	input                []rune
 	inputOverride        *[]rune
@@ -1017,6 +1018,7 @@ func NewTerminal(opts *Options, eventBox *util.EventBox, executor *util.Executor
 		cy:                 0,
 		offset:             0,
 		xoffset:            0,
+		anchor:             -1,
 		yanked:             []rune{},
 		input:              input,
 		multi:              opts.Multi,
@@ -5314,6 +5316,17 @@ func (t *Terminal) toggleItem(item *Item) bool {
 	return true
 }
 
+func (t *Terminal) selectRange(from, to int) {
+	if from > to {
+		from, to = to, from
+	}
+	from = util.Constrain(from, 0, t.merger.Length()-1)
+	to = util.Constrain(to, 0, t.merger.Length()-1)
+	for i := from; i <= to; i++ {
+		t.selectItem(t.merger.Get(i).item)
+	}
+}
+
 func (t *Terminal) killPreview() {
 	select {
 	case t.killChan <- true:
@@ -7272,17 +7285,30 @@ func (t *Terminal) Loop() error {
 					} else if my >= min {
 						t.vset(cy)
 						req(reqList)
-						evt := tui.RightClick
-						if me.Mod() {
-							evt = tui.SRightClick
-						}
-						if me.Left {
-							evt = tui.LeftClick
-							if me.Mod() {
-								evt = tui.SLeftClick
+						if me.Left && t.multi > 0 && me.Ctrl {
+							// Ctrl+click: toggle item, set anchor
+							if t.cy < t.merger.Length() {
+								t.toggleItem(t.merger.Get(t.cy).item)
 							}
+							t.anchor = t.cy
+							return doActions(actionsFor(tui.LeftClick))
+						} else if me.Left && t.multi > 0 && me.Shift && t.anchor >= 0 {
+							// Shift+click: select range from anchor
+							t.selectRange(t.anchor, t.cy)
+							t.anchor = t.cy
+							return doActions(actionsFor(tui.LeftClick))
+						} else if me.Left {
+							// Plain click: move cursor, set anchor
+							t.anchor = t.cy
+							return doActions(actionsFor(tui.LeftClick))
+						} else {
+							// Right-click: toggle (existing behavior)
+							evt := tui.RightClick
+							if me.Mod() {
+								evt = tui.SRightClick
+							}
+							return doActions(actionsFor(evt))
 						}
-						return doActions(actionsFor(evt))
 					}
 				}
 				if clicked && t.headerVisible && t.headerWindow == nil {

@@ -184,6 +184,7 @@ func (r *FullscreenRenderer) initScreen() error {
 	s.EnablePaste()
 	if r.mouse {
 		s.EnableMouse()
+		os.Stdout.WriteString("\x1b[>1s") // XTSHIFTESCAPE: pass shift-clicks to application
 	} else {
 		s.DisableMouse()
 	}
@@ -722,6 +723,9 @@ func (r *FullscreenRenderer) Resume(clear bool, sigcont bool) {
 }
 
 func (r *FullscreenRenderer) Close() {
+	if r.mouse {
+		os.Stdout.WriteString("\x1b[>0s") // XTSHIFTESCAPE: restore terminal shift-click handling
+	}
 	_screen.Fini()
 	_screen = nil
 }

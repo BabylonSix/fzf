@@ -970,12 +970,14 @@ func (r *LightRenderer) enableModes() {
 		r.csi("?1000h")
 		r.csi("?1002h")
 		r.csi("?1006h")
+		r.csi(">1s") // XTSHIFTESCAPE: pass shift-clicks to application
 	}
 	r.csi("?2004h") // Enable bracketed paste mode
 }
 
 func (r *LightRenderer) disableMouse() {
 	if r.mouse {
+		r.csi(">0s") // XTSHIFTESCAPE: restore terminal shift-click handling
 		r.csi("?1000l")
 		r.csi("?1002l")
 		r.csi("?1006l")
